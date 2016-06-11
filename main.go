@@ -364,8 +364,8 @@ func main() {
 
 	// SHOW CURSOR: fmt.Printf("\033[?25l")
 
-	// Hide cursor
-	fmt.Printf("\033[?25l")
+	// Hide cursor and clear screen.
+	fmt.Printf("\033[?25l\033[2J")
 
 	for t := range time.Tick(time.Millisecond * 250) {
 		err := gather(conf, &s)
