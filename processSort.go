@@ -19,7 +19,7 @@ func (s processSort) Less(i, j int) bool {
 	// If the state are different, we sort by state.
 	if a.State != b.State {
 		// Show running processes first.
-		if a.State == "Running" {
+		if a.State == Running {
 			return true
 		}
 		return false

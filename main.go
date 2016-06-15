@@ -16,22 +16,6 @@ import (
 )
 
 type (
-	process struct {
-		Pid               int       `json:"pid"`
-		LastRequestCpu    float64   `json:"last request cpu"`
-		LastRequestMemory int       `json:"last request memory"`
-		State             string    `json:"state"`
-		User              string    `json:"user"`
-		ContentLength     int       `json:"content length"`
-		RequestUri        string    `json:"request uri"`
-		RequestDuration   int       `json:"request duration"`
-		Requests          int       `json:"requests"`
-		StartSince        int       `json:"start since"`
-		StartTime         time.Time `json:"start time_FIXME"`
-		Script            string    `json:"script"`
-		RequestMethod     string    `json:"request method"`
-	}
-
 	status struct {
 		SlowRequests        int       `json:"slow requests"`
 		AcceptedConnections int       `json:"accepted conn"`
@@ -326,9 +310,9 @@ func main() {
 
 			// Print a single square showing state.
 			switch pro.State {
-			case "Running":
+			case Running:
 				fmt.Printf("\033[45m \033[0m")
-			case "Idle":
+			case Idle:
 				fmt.Printf("\033[42m \033[0m")
 			default:
 				fmt.Printf("\033[41m \033[0m")
@@ -338,7 +322,7 @@ func main() {
 			up := time.Second * time.Duration(pro.StartSince)
 
 			// Print running processes in bold.
-			if pro.State == "Running" {
+			if pro.State == Running {
 				fmt.Printf("\033[1m")
 			}
 
@@ -353,7 +337,7 @@ func main() {
 			}
 
 			// Print the process line.
-			fmt.Printf("%7d %10s %10s %10d %10s %7s %s\033[K", pro.Pid, up.String(), pro.State, pro.LastRequestMemory, dur.String(), pro.RequestMethod, pro.RequestUri)
+			fmt.Printf("%7d %10s %10s %10d %10s %7s %s\033[K", pro.Pid, up.String(), pro.State, pro.LastRequestMemory, dur.String(), pro.RequestMethod, pro.RequestURI)
 
 			// Rerset ANSI colors etc.
 			fmt.Printf("\033[0m")
