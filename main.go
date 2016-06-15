@@ -8,11 +8,14 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"sort"
 	"strings"
 	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/pkg/term"
 )
 
 type (
@@ -57,6 +60,22 @@ type (
 		Rows, Columns  uint16
 		XPixel, YPixel uint16
 	}
+)
+
+var (
+	updateDelays = []time.Duration{
+		time.Millisecond * 50,
+		time.Millisecond * 100,
+		time.Millisecond * 250,
+		time.Millisecond * 500,
+		time.Second,
+		time.Second * 2,
+		time.Second * 5,
+		time.Second * 10,
+		time.Second * 30,
+		time.Second * 60,
+		time.Hour,
+		time.Hour * 24}
 )
 
 func getTerminalSize() (int, int) {
@@ -252,6 +271,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	t, _ := term.Open("/dev/tty")
+	term.CBreakMode(t)
+
+	keyboard := make(chan rune)
+	// Read from keyboard.
+	go func() {
+		bytes := make([]byte, 3)
+		for {
+			numRead, _ := t.Read(bytes)
+
+			for _, key := range bytes[:numRead] {
+				keyboard <- rune(key)
+			}
+		}
+	}()
+
 	last := status{}
 	gather(conf, &last)
 
@@ -265,85 +300,141 @@ func main() {
 	// Hide cursor and clear screen.
 	fmt.Printf("\033[?25l\033[2J")
 
-	for t := range time.Tick(time.Millisecond * 250) {
-		err := gather(conf, &s)
-		if err != nil {
-			fmt.Printf("\033[H\033[2JError: %s", err.Error())
+	timer := time.NewTimer(time.Duration(0))
 
-			continue
+	// Catch signals from OS or shell.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+	signal.Notify(quit, syscall.SIGTERM)
+
+	delay := 1
+	lessDelay := func() {
+		delay--
+		if delay < 0 {
+			delay = 0
 		}
 
-		_, height := getTerminalSize()
-		delta := t.Sub(lastTime)
-
-		sort.Sort(processSort(s.Processes))
-
-		uptime := time.Second * time.Duration(s.StartSince)
-
-		requestPerSecond := float64(s.AcceptedConnections-last.AcceptedConnections) / (float64(delta) / float64(time.Second))
-
-		// Draw the sparkline showing request per second.
-		line.Push(requestPerSecond)
-
-		// Start in the upper left.
-		fmt.Printf("\033[0;0H")
-
-		// Print headers.
-		fmt.Printf("PHP-FPM Pool: \033[32m%s\033[0m   Uptime: \033[32m%s\033[0m   Manager: \033[32m%s\033[0m   Accepted Connections: \033[32m%d\033[0m\033[K\n", s.Pool, uptime.String(), s.ProcessManager, s.AcceptedConnections)
-		fmt.Printf("Active/Total: \033[32m%4d\033[0m/\033[32m%-4d\033[0m   Queue: \033[32m%d\033[0m   Request per Second: \033[32m%.1f\033[0m\033[K\n", s.ActiveProcesses, s.ActiveProcesses+s.IdleProcesses, s.ListenQueue, requestPerSecond)
-
-		// Print beautiful sky colored table headers.
-		fmt.Printf("%s\033[K\n\033[0;37;44m", line.String())
-		fmt.Printf("%7s %10s %10s %10s %10s", "PID", "Uptime", "State", "Mem", "Duration")
-		fmt.Printf("\033[K\033[0m")
-
-		// Make room for headers.
-		height -= 3
-
-		for _, pro := range s.Processes {
-			height--
-			if height == 0 {
-				break
-			}
-
-			fmt.Printf("\n")
-
-			// Print a single square showing state.
-			switch pro.State {
-			case Running:
-				fmt.Printf("\033[45m \033[0m")
-			case Idle:
-				fmt.Printf("\033[42m \033[0m")
-			default:
-				fmt.Printf("\033[41m \033[0m")
-			}
-
-			dur := time.Microsecond * time.Duration(pro.RequestDuration)
-			up := time.Second * time.Duration(pro.StartSince)
-
-			// Print running processes in bold.
-			if pro.State == Running {
-				fmt.Printf("\033[1m")
-			}
-
-			// If the duration is more than 500ms, print in yellow.
-			if dur > time.Millisecond*500 {
-				// Or red if we exceed 1 second.
-				if dur > time.Millisecond*1000 {
-					fmt.Printf("\033[31m")
-				} else {
-					fmt.Printf("\033[33m")
-				}
-			}
-
-			// Print the process line.
-			fmt.Printf("%7d %10s %10s %10d %10s %7s %s\033[K", pro.Pid, up.String(), pro.State, pro.LastRequestMemory, dur.String(), pro.RequestMethod, pro.RequestURI)
-
-			// Rerset ANSI colors etc.
-			fmt.Printf("\033[0m")
-		}
-
-		lastTime = t
-		last = s
+		timer.Reset(0)
 	}
+
+	moreDelay := func() {
+		delay++
+
+		if delay > len(updateDelays)-1 {
+			delay = len(updateDelays) - 1
+		}
+
+		timer.Reset(0)
+	}
+
+MAINLOOP:
+	for {
+		select {
+		case <-quit:
+			break MAINLOOP
+
+		case key := <-keyboard:
+			switch key {
+			case 'q':
+				break MAINLOOP
+			case '-':
+				lessDelay()
+			case '+':
+				moreDelay()
+			case ' ':
+				// We trigger the timer now to redraw at once.
+				timer.Reset(0)
+			}
+
+		case t := <-timer.C:
+			err := gather(conf, &s)
+			if err != nil {
+				fmt.Printf("\033[H\033[2JError: %s", err.Error())
+
+				timer.Reset(updateDelays[delay] - time.Now().Sub(t))
+				continue MAINLOOP
+			}
+
+			_, height := getTerminalSize()
+			delta := t.Sub(lastTime)
+
+			sort.Sort(processSort(s.Processes))
+
+			uptime := time.Second * time.Duration(s.StartSince)
+
+			requestPerSecond := float64(s.AcceptedConnections-last.AcceptedConnections) / (float64(delta) / float64(time.Second))
+
+			// Draw the sparkline showing request per second.
+			line.Push(requestPerSecond)
+
+			// Start in the upper left.
+			fmt.Printf("\033[0;0H")
+
+			// Print headers.
+			fmt.Printf("PHP-FPM Pool: \033[32m%s\033[0m   Uptime: \033[32m%s\033[0m   Manager: \033[32m%s\033[0m   Accepted Connections: \033[32m%d\033[0m\033[K\n\r", s.Pool, uptime.String(), s.ProcessManager, s.AcceptedConnections)
+			fmt.Printf("Active/Total: \033[32m%4d\033[0m/\033[32m%-4d\033[0m   Queue: \033[32m%d\033[0m   Request per Second: \033[32m%.1f\033[0m\033[K   Poll Delay: \033[32m%s\033[0m\n\r", s.ActiveProcesses, s.ActiveProcesses+s.IdleProcesses, s.ListenQueue, requestPerSecond, updateDelays[delay].String())
+
+			// Print beautiful sky colored table headers.
+			fmt.Printf("%s\033[K\n\r\033[0;37;44m", line.String())
+			fmt.Printf("%7s %10s %10s %10s %10s", "PID", "Uptime", "State", "Mem", "Duration")
+			fmt.Printf("\033[K\033[0m")
+
+			// Make room for headers.
+			height -= 3
+
+			for _, pro := range s.Processes {
+				height--
+				if height == 0 {
+					break
+				}
+
+				fmt.Printf("\n\r")
+
+				// Print a single square showing state.
+				switch pro.State {
+				case Running:
+					fmt.Printf("\033[45m \033[0m")
+				case Idle:
+					fmt.Printf("\033[42m \033[0m")
+				default:
+					fmt.Printf("\033[41m \033[0m")
+				}
+
+				dur := time.Microsecond * time.Duration(pro.RequestDuration)
+				up := time.Second * time.Duration(pro.StartSince)
+
+				// Print running processes in bold.
+				if pro.State == Running {
+					fmt.Printf("\033[1m")
+				}
+
+				// If the duration is more than 500ms, print in yellow.
+				if dur > time.Millisecond*500 {
+					// Or red if we exceed 1 second.
+					if dur > time.Millisecond*1000 {
+						fmt.Printf("\033[31m")
+					} else {
+						fmt.Printf("\033[33m")
+					}
+				}
+
+				// Print the process line.
+				fmt.Printf("%7d %10s %10s %10d %10s %7s %s\033[K", pro.Pid, up.String(), pro.State, pro.LastRequestMemory, dur.String(), pro.RequestMethod, pro.RequestURI)
+
+				// Rerset ANSI colors etc.
+				fmt.Printf("\033[0m")
+			}
+
+			lastTime = t
+			last = s
+
+			timer.Reset(updateDelays[delay] - time.Now().Sub(t))
+		}
+	}
+
+	// Enable cursor and restore terminal.
+	fmt.Printf("\033[?25h\n\r")
+
+	t.Restore()
+	t.Close()
 }
