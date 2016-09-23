@@ -15,6 +15,7 @@ type (
 	config struct {
 		StatusPath string `toml:"status"`
 		ListenPath string `toml:"listen"`
+		URL        string `toml:"url"`
 	}
 )
 
@@ -32,6 +33,10 @@ const (
 [default]
 listen = "/var/run/php5-fpm.sock"    # The value of the "listen" option in the PHP-FPM-pool config.
 status = "/status"                   # The value of the "status" option.
+
+# If you define an URL, phpfpmtop will try to retrieve the status page via
+# HTTP. FPM options will be ignored.
+#url = "https://www.example.com/phpfpm_status"
 `
 )
 

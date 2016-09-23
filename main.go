@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"sort"
@@ -213,11 +215,30 @@ func fpmGet(listenPath string, path string) ([]byte, error) {
 }
 
 func gather(conf config, s *status) error {
-	body, err := fpmGet(conf.ListenPath, conf.StatusPath)
+	var body []byte
+
+	if conf.URL != "" {
+		resp, err := http.Get(conf.URL + "?full&json")
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		body, err = ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+	} else {
+		var err error
+		body, err = fpmGet(conf.ListenPath, conf.StatusPath)
+		if err != nil {
+			return err
+		}
+	}
 
 	if len(body) > 0 {
 		start := strings.IndexRune(string(body), '{')
-		err = json.Unmarshal(body[start:], s)
+		err := json.Unmarshal(body[start:], s)
 		if err != nil {
 			return err
 		}
