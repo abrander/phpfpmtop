@@ -96,19 +96,20 @@ func getTerminalSize() (int, int) {
 	return int(ws.Columns), int(ws.Rows)
 }
 
-func gather(conf config, s *status) error {
+func fpmGet(listenPath string, path string) ([]byte, error) {
 	var network string
 
-	if strings.HasPrefix(conf.ListenPath, "/") {
+	if strings.HasPrefix(listenPath, "/") {
 		network = "unix"
 	} else {
 		network = "tcp"
 	}
 
-	conn, err := net.Dial(network, conf.ListenPath)
+	conn, err := net.Dial(network, listenPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	defer conn.Close()
 
 	// We implement just enough of FastCGI to "GET" the status page. Nothing
 	// more. It will probably break in exciting ways.
@@ -126,19 +127,19 @@ func gather(conf config, s *status) error {
 
 	err = binary.Write(conn, binary.BigEndian, r)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = binary.Write(conn, binary.BigEndian, app)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// {FCGI_PARAMS, 1, "\013\002SERVER_PORT80" "\013\016SERVER_ADDR199.170.183.42 ... "}
 	p := NewParams()
 
-	p["SCRIPT_NAME"] = conf.StatusPath
-	p["SCRIPT_FILENAME"] = conf.StatusPath
+	p["SCRIPT_NAME"] = path
+	p["SCRIPT_FILENAME"] = path
 	p["REQUEST_METHOD"] = "GET"
 	p["QUERY_STRING"] = "full&json& (phpfpmtop)"
 
@@ -150,12 +151,12 @@ func gather(conf config, s *status) error {
 
 	err = binary.Write(conn, binary.BigEndian, r)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = p.Write(conn)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// {FCGI_PARAMS, 1, ""}
@@ -165,7 +166,7 @@ func gather(conf config, s *status) error {
 	}
 	err = binary.Write(conn, binary.BigEndian, r)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// {FCGI_STDIN, 1, ""}
@@ -175,7 +176,7 @@ func gather(conf config, s *status) error {
 	}
 	err = binary.Write(conn, binary.BigEndian, r)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var stdin []byte
@@ -190,7 +191,7 @@ func gather(conf config, s *status) error {
 		}
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		// Collect stdin
@@ -205,20 +206,21 @@ func gather(conf config, s *status) error {
 	}
 
 	if len(stderr) > 0 {
-		return fmt.Errorf("Could not get '%s': %s", conf.StatusPath, string(stderr))
+		return nil, fmt.Errorf("Could not get '%s': %s", path, string(stderr))
 	}
 
-	if len(stdin) > 0 {
-		start := strings.IndexRune(string(stdin), '{')
-		err = json.Unmarshal(stdin[start:], s)
+	return stdin, nil
+}
+
+func gather(conf config, s *status) error {
+	body, err := fpmGet(conf.ListenPath, conf.StatusPath)
+
+	if len(body) > 0 {
+		start := strings.IndexRune(string(body), '{')
+		err = json.Unmarshal(body[start:], s)
 		if err != nil {
 			return err
 		}
-	}
-
-	err = conn.Close()
-	if err != nil {
-		return err
 	}
 
 	return nil
