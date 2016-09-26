@@ -428,7 +428,7 @@ MAINLOOP:
 				dur := time.Duration(0)
 
 				requestDuration, err := pro.RequestDuration.Int64()
-				if err != nil {
+				if err == nil {
 					dur = time.Microsecond * time.Duration(requestDuration)
 				}
 
