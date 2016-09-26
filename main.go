@@ -419,11 +419,19 @@ MAINLOOP:
 					fmt.Printf("\033[45m \033[0m")
 				case Idle:
 					fmt.Printf("\033[42m \033[0m")
+				case ReadingHeaders:
+					fmt.Printf("\033[43m \033[0m")
 				default:
 					fmt.Printf("\033[41m \033[0m")
 				}
 
-				dur := time.Microsecond * time.Duration(pro.RequestDuration)
+				dur := time.Duration(0)
+
+				requestDuration, err := pro.RequestDuration.Int64()
+				if err != nil {
+					dur = time.Microsecond * time.Duration(requestDuration)
+				}
+
 				up := time.Second * time.Duration(pro.StartSince)
 
 				// Print running processes in bold.
