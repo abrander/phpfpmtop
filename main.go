@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+	"flag"
 
 	"github.com/pkg/term"
 )
@@ -283,15 +284,24 @@ func readFrame(conn io.Reader) (*frame, error) {
 }
 
 func main() {
+	// get command line flags
+	socketPtr := flag.String("socket", "", "path to PHP-FPM socket")
+	flag.Parse()
+
 	selectedConfig := "default"
-	if len(os.Args) > 1 {
-		selectedConfig = os.Args[1]
+	if len(flag.Args()) > 1 {
+		selectedConfig = flag.Args()[1]
 	}
 
 	conf, found := configs[selectedConfig]
 	if !found {
 		fmt.Printf("%s not found in config file. Please fix.\n", selectedConfig)
 		os.Exit(1)
+	}
+
+
+	if len(*socketPtr) > 0 {
+		conf.ListenPath = *socketPtr
 	}
 
 	t, _ := term.Open("/dev/tty")
