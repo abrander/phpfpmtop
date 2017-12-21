@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -16,7 +17,6 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
-	"flag"
 
 	"github.com/pkg/term"
 )
@@ -298,7 +298,6 @@ func main() {
 		fmt.Printf("%s not found in config file. Please fix.\n", selectedConfig)
 		os.Exit(1)
 	}
-
 
 	if len(*socketPtr) > 0 {
 		conf.ListenPath = *socketPtr
