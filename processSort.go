@@ -26,7 +26,10 @@ func (s processSort) Less(i, j int) bool {
 	}
 
 	// Put the slowest requests on top.
-	if a.RequestDuration > b.RequestDuration {
+	aReq, _ := a.RequestDuration.Int64()
+	bReq, _ := b.RequestDuration.Int64()
+
+	if aReq > bReq {
 		return true
 	}
 
