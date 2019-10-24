@@ -448,18 +448,24 @@ MAINLOOP:
 					fmt.Printf("\033[1m")
 				}
 
-				// If the duration is more than 500ms, print in yellow.
-				if dur > time.Millisecond*500 {
-					// Or red if we exceed 1 second.
-					if dur > time.Millisecond*1000 {
-						fmt.Printf("\033[31m")
-					} else {
-						fmt.Printf("\033[33m")
-					}
+				durStr := dur.String()
+
+				switch {
+				case dur > time.Duration(2000000000000):
+					// If we see a very high duration, it's due to a bug in PHP.
+					durStr = "-"
+
+				case dur > time.Millisecond*1000:
+					// If the duration is more than 1s, print in red.
+					fmt.Printf("\033[31m")
+
+				case dur > time.Millisecond*500:
+					// Or yellow above 500ms.
+					fmt.Printf("\033[33m")
 				}
 
 				// Print the process line.
-				fmt.Printf("%7d %10s %10s %10d %10s %7s %s\033[K", pro.Pid, up.String(), pro.State, pro.LastRequestMemory, dur.String(), pro.RequestMethod, pro.RequestURI)
+				fmt.Printf("%7d %10s %10s %10d %10s %7s %s\033[K", pro.Pid, up.String(), pro.State, pro.LastRequestMemory, durStr, pro.RequestMethod, pro.RequestURI)
 
 				// Rerset ANSI colors etc.
 				fmt.Printf("\033[0m")
