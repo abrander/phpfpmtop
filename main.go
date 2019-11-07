@@ -387,7 +387,7 @@ MAINLOOP:
 				continue MAINLOOP
 			}
 
-			_, height := getTerminalSize()
+			width, height := getTerminalSize()
 			delta := t.Sub(lastTime)
 
 			sort.Sort(processSort(s.Processes))
@@ -464,8 +464,8 @@ MAINLOOP:
 					fmt.Printf("\033[33m")
 				}
 
-				// Print the process line.
-				fmt.Printf("%7d %10s %10s %10d %10s %7s %s\033[K", pro.Pid, up.String(), pro.State, pro.LastRequestMemory, durStr, pro.RequestMethod, pro.RequestURI)
+				// Print the process line. 61 is a magic width constant :)
+				fmt.Printf("%7d %10s %10s %10d %10s %7s %.*s\033[K", pro.Pid, up.String(), pro.State, pro.LastRequestMemory, durStr, pro.RequestMethod, width-61, pro.RequestURI)
 
 				// Rerset ANSI colors etc.
 				fmt.Printf("\033[0m")
