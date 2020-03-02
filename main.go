@@ -88,7 +88,7 @@ func getTerminalSizeFallback() (int, int) {
 
 	if columns*rows == 0 {
 		// Well. This is the default for many terminals.
-		return 80, 25
+		return 80, 24
 	}
 
 	return columns, rows
