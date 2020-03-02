@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -81,10 +81,23 @@ var (
 		time.Hour * 24}
 )
 
+func getTerminalSizeFallback() (int, int) {
+	// Try to use the environment variables set by some shells.
+	rows, _ := strconv.Atoi(os.Getenv("LINES"))
+	columns, _ := strconv.Atoi(os.Getenv("COLUMNS"))
+
+	if columns*rows == 0 {
+		// Well. This is the default for many terminals.
+		return 80, 25
+	}
+
+	return columns, rows
+}
+
 func getTerminalSize() (int, int) {
 	tty, err := os.Open("/dev/tty")
 	if err != nil {
-		log.Fatal(err)
+		return getTerminalSizeFallback()
 	}
 	defer tty.Close()
 
@@ -95,6 +108,10 @@ func getTerminalSize() (int, int) {
 	syscall.Syscall(syscall.SYS_IOCTL,
 		ttyFd, uintptr(syscall.TIOCGWINSZ),
 		uintptr(unsafe.Pointer(&ws)))
+
+	if ws.Columns*ws.Rows == 0 {
+		return getTerminalSizeFallback()
+	}
 
 	return int(ws.Columns), int(ws.Rows)
 }
@@ -304,14 +321,16 @@ func main() {
 	}
 
 	t, _ := term.Open("/dev/tty")
-	term.CBreakMode(t)
+	if t != nil {
+		t.SetCbreak()
+	}
 
 	keyboard := make(chan rune)
 	// Read from keyboard.
 	go func() {
 		bytes := make([]byte, 3)
 		for {
-			numRead, _ := t.Read(bytes)
+			numRead, _ := os.Stdin.Read(bytes)
 
 			for _, key := range bytes[:numRead] {
 				keyboard <- rune(key)
@@ -381,7 +400,7 @@ MAINLOOP:
 		case t := <-timer.C:
 			err := gather(conf, &s)
 			if err != nil {
-				fmt.Printf("\033[H\033[2JError: %s", err.Error())
+				fmt.Printf("Error: %s\n", err.Error())
 
 				timer.Reset(updateDelays[delay] - time.Now().Sub(t))
 				continue MAINLOOP
@@ -464,8 +483,22 @@ MAINLOOP:
 					fmt.Printf("\033[33m")
 				}
 
-				// Print the process line. 61 is a magic width constant :)
-				fmt.Printf("%7d %10s %10s %10d %10s %7s %.*s\033[K", pro.Pid, up.String(), pro.State, pro.LastRequestMemory, durStr, pro.RequestMethod, width-61, pro.RequestURI)
+				part := fmt.Sprintf("%7d %10s %10s %10d %10s %7s",
+					pro.Pid,
+					up.String(),
+					pro.State,
+					pro.LastRequestMemory,
+					durStr,
+					pro.RequestMethod,
+				)
+
+				uriWidth := width - len(part) - 1 // The square
+				if uriWidth < 0 {
+					uriWidth = 0
+				}
+
+				// Print the process line.
+				fmt.Printf("%s %.*s\033[K", part, uriWidth, pro.RequestURI)
 
 				// Rerset ANSI colors etc.
 				fmt.Printf("\033[0m")
@@ -481,6 +514,8 @@ MAINLOOP:
 	// Enable cursor and restore terminal.
 	fmt.Printf("\033[?25h\n\r")
 
-	t.Restore()
-	t.Close()
+	if t != nil {
+		t.Restore()
+		t.Close()
+	}
 }
